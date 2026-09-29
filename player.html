@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouTube bridge player</title>
+<style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    #p { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="p"></div>
+<script>
+/* Tiny YouTube player that is controlled by the loading screen via postMessage.
+   Host this file on any https site (GitHub Pages, Netlify, Cloudflare Pages...). */
+var player = null, ready = false, pending = null, volume = 35, quality = 'hd1080';
+
+function send(msg) {
+    msg.ytbridge = true;
+    try { window.parent.postMessage(msg, '*'); } catch (e) {}
+}
+
+function applyLoad(m) {
+    var opts = { videoId: m.videoId, suggestedQuality: m.quality || quality };
+    if (m.quality) quality = m.quality;
+    if (m.autoplay) player.loadVideoById(opts); else player.cueVideoById(opts);
+}
+
+function onYouTubeIframeAPIReady() {
+    player = new YT.Player('p', {
+        width: '100%',
+        height: '100%',
+        playerVars: {
+            autoplay: 1, controls: 0, disablekb: 1, fs: 0, modestbranding: 1,
+            rel: 0, iv_load_policy: 3, playsinline: 1, cc_load_policy: 0,
+            origin: location.origin
+        },
+        events: {
+            onReady: function () {
+                ready = true;
+                player.setVolume(volume);
+                send({ type: 'ready' });
+                if (pending) { applyLoad(pending); pending = null; }
+            },
+            onStateChange: function (e) { send({ type: 'state', state: e.data }); },
+            onError: function (e) { send({ type: 'error', code: e.data }); }
+        }
+    });
+}
+
+window.addEventListener('message', function (e) {
+    var m = e.data;
+    if (!m || !m.ytbridge) return;
+    if (m.cmd === 'volume') { volume = m.value; if (ready) player.setVolume(volume); return; }
+    if (m.cmd === 'load') { if (ready) applyLoad(m); else pending = m; return; }
+    if (!ready) return;
+    if (m.cmd === 'play') player.playVideo();
+    else if (m.cmd === 'pause') player.pauseVideo();
+    else if (m.cmd === 'seek') player.seekTo(m.value, true);
+    else if (m.cmd === 'quality') { try { player.setPlaybackQuality(m.value); } catch (x) {} }
+});
+
+var tag = document.createElement('script');
+tag.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(tag);
+</script>
+</body>
+</html>
